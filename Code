@@ -1,0 +1,101 @@
+ import numpy as np
+ import matplotlib.pyplot as plt
+ def generate_MPAM_signal(M,N):
+    levels=np.arange(-(M-1),M,2) # Generate the amplitude levels
+    d=np.random.choice(levels,size=N) #Generate the signal
+    
+    return d,levels
+ def upsample_signal(d,L,N): #Upsample the signal
+    v=np.zeros(N*L)
+    v[::L]=d
+    
+    return v
+ def generate_srrc(beta, Ts, Nsym, L,t): #Generate the square root raised cosine pulse
+    p=np.zeros_like(t)
+    for i in range(len(t)):
+        if t[i]==0:
+            p[i]=(1/Ts)*(1+beta*((4/np.pi)-1))
+        elif abs(t[i])==Ts/(4*beta):
+            p[i]=(beta/(Ts*np.sqrt(2)))*(((1+2/np.pi)*np.sin(np.pi/(4*beta)))+
+ ((1-2/np.pi)*np.cos(np.pi/(4*beta))))
+        else:
+            p[i]=(1/Ts)*((np.sin(np.pi*t[i]/Ts*(1-beta)))+(4*beta*t[i]/Ts*np.cos(np.pi*t[i]/Ts*(1+beta))))
+ /(np.pi*t[i]/Ts*(1-(4*beta*t[i]/Ts)**2))
+    #Normalize the pulse shape energy to unity
+    k=np.sqrt(np.sum(p**2)) #rms value 
+    p=p/k  #normalisation
+    return p
+ def awgn(s,val):
+    sp=L*np.sum(np.abs(s)**2)/len(s) #signal power
+    snr=10*np.log10(np.log2(M))+val #SNR per symbol
+    npsd=sp/(2*10**(snr/10)) #noise power spectral density
+    n=np.random.normal(0,np.sqrt(npsd),len(s))
+    return n
+ def matched_filter(p,dBrange,symbols):
+    D=int(Nsym*L/2)
+    s=np.convolve(v,p) #Convolve the upsampled input stream 'v' with the shaping pulse 'p'
+    ser=[]
+    for val in dBrange:
+        r=s+awgn(s,val) #Add Gaussian noise to 's' to simulate transmission via a baseband AWGN channel
+        #Matched filter at the receiver
+        h=p[::-1]
+        s_hat=np.convolve(r,h)
+        #Downsampled match filter output
+        v_hat=s_hat[2*D+1:len(s_hat)-2*D:L]
+        #Demodulate v_hat to the nearest 4-PAM point to obtain decoded stream ˆd
+        dist=np.abs(v_hat.reshape(-1,1)-symbols.reshape(1,-1))
+        
+        temp=np.argmin(dist,axis=1)
+        d_hat = symbols[temp]
+        #Compute symbol error rate
+        ser.append(np.sum(d!=d_hat)/len(d))
+    return s,r,s_hat,v_hat,d_hat,ser
+#Generate the M-PAM signal
+ M=4
+ N=10**5
+ d,symbols=generate_MPAM_signal(M, N)
+ #Upsample the signal
+ L=8
+ v=upsample_signal(d, L,N)
+ #Generate the srrc pulse
+ beta=0.3
+ Ts=1
+ Nsym=8
+ t=np.linspace(-Nsym/2,Nsym/2,Nsym*L+1) #Generate the time vector
+ p=generate_srrc(beta,Ts,Nsym,L,t)
+ #Simulate the matched filter 
+dBrange=np.arange(-8,14,2)
+ s,r,s_hat,v_hat,d_hat,ser=matched_filter(p,dBrange,symbols)
+ #Plot the required graphs
+ plt.plot(t,p)
+ plt.xlabel("time(t)")
+ plt.ylabel("p(t)")
+ plt.title("RRC pulse")
+ plt.show()
+ fig,axs = plt.subplots(3,2,constrained_layout=True)
+ axs[0,0].stem(d[:15],use_line_collection=True)
+ axs[0,0].set_title("Message symbols (First 15 Symbols)")
+ axs[0,0].set(xlabel="n",ylabel="d")
+ axs[0,1].plot(s[:15*L])
+ axs[0,1].set_title("Transmitted pulse-shaped signal (First 15 Symbols)")
+ axs[0,1].set(xlabel="t",ylabel="s(t)")
+ axs[1,0].plot(r[:15*L])
+ axs[1,0].set_title("Received signal")
+ axs[1,0].set(xlabel="t",ylabel="r(t)")
+ axs[1,1].plot(s_hat[:15*L])
+ axs[1,1].set_title("Output of matched filter")
+ axs[1,1].set(xlabel="t",ylabel="ŝ(t)")
+ axs[2,0].stem(v_hat[:15])
+ axs[2,0].set_title("Downsampled version of matched filter output (First 15 symbols)")
+ axs[2,0].set(xlabel="n",ylabel="û")
+ axs[2,1].stem(d_hat[:15], use_line_collection=True)
+ axs[2,1].set_title("Decoded symbols (First 15 symbols)")
+ axs[2,1].set(xlabel="n",ylabel=" d")
+ plt.show()
+ plt.plot(dBrange, ser, 'bo-', linewidth=2, markersize=8)
+ plt.title("SER vs SNR per bit")
+ plt.xlabel("Eb/N0 (in dB)")
+ plt.ylabel("Symbol Error Rate")
+ plt.xticks(dBrange)
+ plt.grid()
+ plt.show()
